@@ -22,7 +22,6 @@
 #include <stdint.h>
 #include <unordered_map>
 #include <vector>
-#include <iostream>
 
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
@@ -71,6 +70,8 @@ private:
   std::atomic<int> ref_count_{0};
 };
 
+// Constant tensors within a ModuleOp will share one const_cache_proxy, but
+// each will be with a cached_const_graph_tensor with offset.
 struct const_cache_proxy : ref_count_managed {
   const_cache_proxy(const std::shared_ptr<void> &keep_alive, void *buffer,
                     size_t size, bool is_lazy)
@@ -108,12 +109,8 @@ struct dnnl_graph_compiler_context;
 
 // void *(*allocator)(size_t size); // get from dnnl_graph_compiler_context
 // void (*deallocator)(void *ptr);  // get from dnnl_graph_compiler_context
-void *allocator(size_t size) {
-  return std::aligned_alloc(64, size);
-}
-void deallocator(void *ptr) {
-  std::free(ptr);
-}
+void *allocator(size_t size) { return std::aligned_alloc(64, size); }
+void deallocator(void *ptr) { std::free(ptr); }
 
 // allocate the const cache buffer and register it to Graph API cache manager
 std::shared_ptr<const_cache_proxy>
@@ -126,18 +123,14 @@ create_and_register_const_cache(dnnl_graph_compiler_context *ctx, size_t size) {
 
 // Cached tensor with buffer
 struct cached_const_graph_tensor {
-  mlir::Value tensor_;
-  // mlir::Operation *producer_;
+  int64_t global_id_;
   size_t size_; // original size
   // the base pointer of buf_. buf_ may be cut from a larger buffer buf_base_.
   std::shared_ptr<const_cache_proxy> buf_base_;
   // the offset of buf_ on the base buffer of buf_base_
   size_t offset_ = 0;
 
-  cached_const_graph_tensor(dnnl_graph_compiler_context *ctx, mlir::Value tensor,
-                            /*mlir::Operation *producer, */ size_t size) {
-    tensor = tensor;
-    // producer_ = producer;
+  cached_const_graph_tensor(dnnl_graph_compiler_context *ctx, size_t size) {
     size_ = size;
     buf_base_ = nullptr;
   }
@@ -148,6 +141,8 @@ size_t divide_and_ceil(size_t x, size_t y) { return (x + y - 1) / y; }
 // Manager
 struct const_graph_tensor_cache_manager {
   dnnl_graph_compiler_context *ctx;
+
+  int64_t global_id = 0;
 
   // Stores all the cached tensors.
   std::unordered_map<int64_t, std::shared_ptr<cached_const_graph_tensor>>
@@ -164,7 +159,8 @@ struct const_graph_tensor_cache_manager {
       }
     }
     auto base = create_and_register_const_cache(ctx, total_size);
-    llvm::dbgs() << "Alloc base: " << base->get_buffer_if_not_lazy() << ", size: " << total_size << '\n';
+    llvm::dbgs() << "Alloc base: " << base->get_buffer_if_not_lazy()
+                 << ", size: " << total_size << '\n';
     size_t offset = 0;
     for (size_t idx = 0; idx < caches.size(); idx++) {
       auto &v = caches[idx];
@@ -178,19 +174,15 @@ struct const_graph_tensor_cache_manager {
     }
   }
 
-  // Get a hash value from a tensor.
-  int64_t hash_tensor(mlir::Value tensor) { return 1; }
-
-  std::shared_ptr<cached_const_graph_tensor> add_tensor(mlir::Value tensor,
-                                                        size_t buf_size) {
-    auto ret = std::make_shared<cached_const_graph_tensor>(ctx, tensor, buf_size);
-    int64_t key = hash_tensor(tensor);
+  std::shared_ptr<cached_const_graph_tensor> add_tensor(size_t buf_size) {
+    auto ret = std::make_shared<cached_const_graph_tensor>(ctx, buf_size);
+    int64_t key = global_id++;
+    ret->global_id_ = key;
     value_to_cached_tensor[key] = ret;
     return ret;
   }
 
-  void remove(mlir::Value tensor) {
-    int64_t key = hash_tensor(tensor);
+  void remove(int64_t key) {
     if (value_to_cached_tensor.find(key) != value_to_cached_tensor.end()) {
       value_to_cached_tensor.erase(key);
     }

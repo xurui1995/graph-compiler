@@ -20,6 +20,7 @@
 #include "mlir/Dialect/Bufferization/Transforms/Bufferize.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -278,6 +279,36 @@ void postponeBroadcast(Block &block) {
 
 static constexpr int DATA_SIZE_EXPANDING_THRESHOLD = 8;
 
+static void addGlobalArray(ModuleOp module, Location loc, OpBuilder &builder,
+                           StringRef name, ArrayRef<int64_t> array) {
+  OpBuilder::InsertionGuard insertGuard(builder);
+  builder.setInsertionPointToStart(module.getBody());
+
+  // Use LLVM::GlobalOp
+  // // LLVM ERROR: can't create type 'mlir::LLVM::LLVMArrayType' because
+  // storage
+  // // uniquer isn't initialized: the dialect was likely not loaded, or the
+  // type
+  // // wasn't added with addTypes<...>() in the Dialect::initialize() method.
+  // auto type = LLVM::LLVMArrayType::get(
+  //     IntegerType::get(builder.getContext(), 8), array.size());
+  // LLVM::GlobalOp global = builder.create<LLVM::GlobalOp>(
+  //     loc, type, /*isConstant=*/true, LLVM::Linkage::Internal, name,
+  //     builder.getIndexArrayAttr(array),
+  //     /*alignment=*/0);
+
+  // Use memref::GlobalOp
+  MemRefType type = MemRefType::Builder(array.size(), builder.getIndexType());
+  IntegerAttr memrefAlignment = IntegerAttr();
+  auto global = builder.create<memref::GlobalOp>(
+      loc, name,
+      /*sym_visibility=*/builder.getStringAttr("public"),
+      /*type=*/type,
+      /*initial_value=*/builder.getIndexTensorAttr(array),
+      /*constant=*/true,
+      /*alignment=*/memrefAlignment);
+}
+
 // Operate on tensors. Create fold() and compute() on module. The
 // folded weights and first-run flag is maintained by upper-level runtime.
 void CST::runOnOperation() {
@@ -423,12 +454,14 @@ void CST::runOnOperation() {
   }
 
   // Allocate buffer for outputValuesInFold
+  SmallVector<int64_t> globalIndexes;
   std::vector<std::shared_ptr<cached_const_graph_tensor>> caches;
   for (Value &tensor : outputValuesInFold) {
     llvm::dbgs() << "Allocate buffer for tensor: " << tensor << "\n";
-    caches.push_back(manager->add_tensor(
-        tensor, /*tensor.getDefiningOp(),*/
-        getTensorSize(dyn_cast<TensorType>(tensor.getType()))));
+    auto cache = manager->add_tensor(
+        getTensorSize(dyn_cast<TensorType>(tensor.getType())));
+    globalIndexes.push_back(cache->global_id_);
+    caches.push_back(cache);
   }
   manager->alloc(caches);
 
@@ -439,8 +472,10 @@ void CST::runOnOperation() {
   // modify the BlockArguments of block
   size_t oriNumArgs = block.getNumArguments();
   size_t argIdx = 0;
+  SmallVector<int64_t> constIndexes;
   for (size_t id = 0; id < oriNumArgs; ++id) {
     if (constArgsIndexes.count(id) == 1) {
+      constIndexes.push_back(id);
       auto loc = block.getArgument(id).getLoc();
       BlockArgument foldArg =
           block.insertArgument(id, outputTypes[argIdx], loc);
@@ -470,6 +505,12 @@ void CST::runOnOperation() {
       ++argIdx;
     }
   }
+
+  // context->getOrLoadDialect<LLVM::LLVMDialect>();
+  addGlobalArray(moduleOp, moduleOp.getLoc(), builder, "foldedArgsIndex",
+                 constIndexes);
+  addGlobalArray(moduleOp, moduleOp.getLoc(), builder,
+                 "cachedBuffersGlobalIndex", globalIndexes);
 
   // modify the compute func signature
   func::FuncOp computeFunc = cast<func::FuncOp>(topFunc);

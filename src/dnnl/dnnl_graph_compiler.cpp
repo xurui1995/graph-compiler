@@ -20,7 +20,10 @@
 #include "gc_version.h"
 #include <memory>
 #include <new>
+#include <vector>
 #include <string_view>
+
+#include "constant_weights_cache_manager.h"
 
 #if defined _WIN32 || defined __CYGWIN__
 #define GC_DLL_EXPORT __declspec(dllexport)
@@ -36,11 +39,28 @@ typedef void (*FuncType)(...);
 struct dnnl_graph_compiler_executable {
   // TODO: Implement
 
-  std::size_t num_constant_inputs;
+  std::vector<int64_t> folded_args_index;
   std::size_t num_inputs;
   std::size_t num_outputs;
+
+  std::vector<void *> folded_args;
+  bool is_inited = false;
+
   FuncType fold;
   FuncType compute;
+
+  dnnl_graph_compiler_executable() {
+    // set folded_args_index, num_inputs and num_outputs
+    // set folded_args
+    auto manager = const_graph_tensor_cache_manager::get_cache();
+    for (size_t idx = 0; idx < folded_args_index.size(); ++idx) {
+      int64_t key = folded_args_index[idx];
+      void *buffer_base = manager->value_to_cached_tensor[key]->buf_base_->acquire();
+      size_t offset = manager->value_to_cached_tensor[key]->offset_;
+      folded_args.push_back(buffer_base + offset);
+    }
+    // set fold and compute
+  }
 
   void execute(dnnl_graph_compiler_tensor *inputs,
                dnnl_graph_compiler_tensor *outputs) const;
@@ -133,7 +153,6 @@ dnnl_graph_compiler::compile(const std::string_view &graph_json) const {
 
   /*
   // Call constant_weights_folding_pass to set attributes of exe and allocate buffers.
-  exe->const_weights_cache_manager = const_weights_cache_manager;
   exe->num_constant_inputs = ...;
   exe->num_inputs = ...;
   exe->num_outputs = ...;
@@ -151,22 +170,14 @@ void dnnl_graph_compiler_executable::execute(
   // TODO: Implement
 
   void *const_input_tensors = inputs->data;
-  void *folded_input_tensors;
 
   // whether the constant input tensors have been folded.
-  int32_t *is_init;
-  is_init[0] = 1;
-
-  for (size_t id = 0; id < num_constant_inputs; ++id) {
-    dnnl_graph_compiler_tensor *input = inputs + id;
-    int64_t hash_id = const_weights_cache_manager->hash_tensor(input);
-    std::shared_ptr<cached_const_graph_tensor> folded = const_weights_cache_manager->from_tensor_id_[hash_id];
-    folded_input_tensors = folded->buf_base_->acquire(is_init) + folded->offset_;
-  }
-  if (is_init == 0) {
-    fold(const_input_tensors, folded_input_tensors);
+  if (!is_inited) {
+    // construct argument list for fold
+    call_fold(const_input_tensors, folded_args);
+    is_inited = true;
   }
 
-  // replace constant inputs with folded inputs; call compute
-  compute(inputs, folded_input_tensors, outputs);
+  // construct argument list by replacing constant inputs with folded inputs; call compute
+  call_compute(inputs, folded_args, outputs);
 }
