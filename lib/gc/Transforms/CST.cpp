@@ -29,6 +29,8 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/Support/Debug.h"
 
+#include "../../../src/dnnl/constant_weights_cache_manager.h"
+
 namespace mlir {
 namespace gc {
 #define GEN_PASS_DEF_CST
@@ -279,6 +281,8 @@ static constexpr int DATA_SIZE_EXPANDING_THRESHOLD = 8;
 // Operate on tensors. Create fold() and compute() on module. The
 // folded weights and first-run flag is maintained by upper-level runtime.
 void CST::runOnOperation() {
+  auto manager = const_graph_tensor_cache_manager::get_cache();
+
   Operation *topOp = getOperation();
   MLIRContext *context = topOp->getContext();
   // A ModuleOp contains a single region, which contains a single block.
@@ -418,6 +422,16 @@ void CST::runOnOperation() {
                                      });
   }
 
+  // Allocate buffer for outputValuesInFold
+  std::vector<std::shared_ptr<cached_const_graph_tensor>> caches;
+  for (Value &tensor : outputValuesInFold) {
+    llvm::dbgs() << "Allocate buffer for tensor: " << tensor << "\n";
+    caches.push_back(manager->add_tensor(
+        tensor, /*tensor.getDefiningOp(),*/
+        getTensorSize(dyn_cast<TensorType>(tensor.getType()))));
+  }
+  manager->alloc(caches);
+
   foldFunc.setVisibility(SymbolTable::Visibility::Public);
   moduleOp.push_back(foldFunc);
   symbolTable.insert(foldFunc);
@@ -488,6 +502,10 @@ void CST::runOnOperation() {
       op.removeAttr("onednn_graph.in_const_subgraph");
     }
   }
+
+  llvm::dbgs() << "After transformation:\n";
+  topOp->print(llvm::dbgs());
+  llvm::dbgs() << '\n';
 }
 
 std::unique_ptr<Pass> createCSTPass() { return std::make_unique<CST>(); }

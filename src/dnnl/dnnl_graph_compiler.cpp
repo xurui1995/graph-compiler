@@ -31,8 +31,16 @@
 // dnnl_graph_compiler.h interface implementation.
 // TODO: Implement.
 
+typedef void (*FuncType)(...);
+
 struct dnnl_graph_compiler_executable {
   // TODO: Implement
+
+  std::size_t num_constant_inputs;
+  std::size_t num_inputs;
+  std::size_t num_outputs;
+  FuncType fold;
+  FuncType compute;
 
   void execute(dnnl_graph_compiler_tensor *inputs,
                dnnl_graph_compiler_tensor *outputs) const;
@@ -66,6 +74,7 @@ dnnl_graph_compiler_create(const struct dnnl_graph_compiler_context *ctx,
                            const struct dnnl_graph_compiler **gc) {
   try {
     *gc = new dnnl_graph_compiler(ctx);
+    (*gc)->const_weights_cache_manager = new const_graph_tensor_cache_manager();
     return dnnl_success;
   } catch (const std::bad_alloc &e) {
     return dnnl_out_of_memory;
@@ -119,12 +128,45 @@ GC_DLL_EXPORT dnnl_status_t dnnl_graph_compiler_execute(
 std::unique_ptr<const dnnl_graph_compiler_executable>
 dnnl_graph_compiler::compile(const std::string_view &graph_json) const {
   // TODO: Implement
-  return std::unique_ptr<const dnnl_graph_compiler_executable>(
+  auto exe = std::unique_ptr<const dnnl_graph_compiler_executable>(
       new dnnl_graph_compiler_executable());
+
+  /*
+  // Call constant_weights_folding_pass to set attributes of exe and allocate buffers.
+  exe->const_weights_cache_manager = const_weights_cache_manager;
+  exe->num_constant_inputs = ...;
+  exe->num_inputs = ...;
+  exe->num_outputs = ...;
+
+  // Lowered functions.
+  exe->fold = ...;
+  exe->compute = ...;
+  */
+  return exe;
 }
 
 void dnnl_graph_compiler_executable::execute(
     dnnl_graph_compiler_tensor *inputs,
     dnnl_graph_compiler_tensor *outputs) const {
   // TODO: Implement
+
+  void *const_input_tensors = inputs->data;
+  void *folded_input_tensors;
+
+  // whether the constant input tensors have been folded.
+  int32_t *is_init;
+  is_init[0] = 1;
+
+  for (size_t id = 0; id < num_constant_inputs; ++id) {
+    dnnl_graph_compiler_tensor *input = inputs + id;
+    int64_t hash_id = const_weights_cache_manager->hash_tensor(input);
+    std::shared_ptr<cached_const_graph_tensor> folded = const_weights_cache_manager->from_tensor_id_[hash_id];
+    folded_input_tensors = folded->buf_base_->acquire(is_init) + folded->offset_;
+  }
+  if (is_init == 0) {
+    fold(const_input_tensors, folded_input_tensors);
+  }
+
+  // replace constant inputs with folded inputs; call compute
+  compute(inputs, folded_input_tensors, outputs);
 }
