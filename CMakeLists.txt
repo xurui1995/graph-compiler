@@ -106,6 +106,9 @@ endif()
 set(GC_LIB_LINKED_LIBS
         GCJitWrapper
         GCCpuRuntime
+        GCPasses
+        GCAnalysis
+        MLIROneDNNGraph
 )
 add_mlir_library(graph_compiler SHARED ${GC_LIB_SOURCES})
 target_include_directories(graph_compiler PUBLIC ${GC_LIB_INCLUDES})
