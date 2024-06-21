@@ -27,15 +27,45 @@ using namespace mlir;
 
 struct SystemDesc {
   // get runtime OMP_NUM_THREADS
-  uint32_t getNumThreads();
+  uint32_t getNumThreads() {
+    char *numThreads = getenv("OMP_NUM_THREADS");
+    if (numThreads) {
+      return std::stoi(numThreads);
+    }
+    return 1;
+  }
   // get cache size by cacheLevel
-  size_t getCacheSize(uint8_t cacheLevel);
+  size_t getCacheSize(uint8_t cacheLevel) {
+    if (cacheLevel == 1) {
+      char *cacheSize = getenv("L1_CACHE_SIZE");
+      if (cacheSize) {
+        return std::stoi(cacheSize);
+      }
+    } else if (cacheLevel == 2) {
+      char *cacheSize = getenv("L2_CACHE_SIZE");
+      if (cacheSize) {
+        return std::stoi(cacheSize);
+      }
+    } else if (cacheLevel == 3) {
+      char *cacheSize = getenv("L3_CACHE_SIZE");
+      if (cacheSize) {
+        return std::stoi(cacheSize);
+      }
+    }
+    return 0;
+  }
+
+  SmallVector<size_t> getContractionOperationMaxVectorLength() {
+    return {512UL, 512UL};
+  }
 };
 
 struct MatmulConfig {
   uint32_t MBlock, NBlock, KBlock;
   uint32_t MThreads, NThreads, KThreads;
   uint32_t innerMostMBlock, innerMostNBlock, innerMostKBlock;
+  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &ss,
+                                       const MatmulConfig &config);
 };
 
 enum DimType { Batch, M, N, K };
