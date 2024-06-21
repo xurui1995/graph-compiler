@@ -840,7 +840,7 @@ struct deepTileMatmul : public OpInterfaceRewritePattern<linalg::LinalgOp> {
         auto upBound =
             eb.wrap<mlir::easybuild::EBUnsigned>(*loop.getSingleUpperBound());
         auto step = eb.wrap<mlir::easybuild::EBUnsigned>(*loop.getSingleStep());
-        auto currentCond = (induceVar + step) > upBound;
+        auto currentCond = (induceVar + step) >= upBound;
         cond = cond & currentCond;
       }
       EB_scf_if(cond, {currentOp.getDpsInits().back().getType()}) {
