@@ -14,6 +14,8 @@ add_mlir_library(GCPasses
   Pipeline.cpp
   DeepTileContractionNamedOp.cpp
   Tiling.cpp
+  SinkOpIntoInnerLoop.cpp
+  MergeNestedForall.cpp
 
   ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include
