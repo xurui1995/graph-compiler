@@ -74,15 +74,4 @@ def MergeNestedForall : Pass<"merge-nested-forall"> {
   let dependentDialects = ["scf::SCFDialect"];
 }
 
-def GCCPUPipeline : Pass<"gc-cpu-pipeline"> {
-  let summary = "All-in-one pipeline for GC for CPU";
-  let dependentDialects = [
-    "onednn_graph::OneDNNGraphDialect", "tensor::TensorDialect",
-    "memref::MemRefDialect", "linalg::LinalgDialect", "linalgx::LinalgxDialect",
-    "LLVM::LLVMDialect", "scf::SCFDialect",
-    "bufferization::BufferizationDialect", "omp::OpenMPDialect",
-    "vector::VectorDialect"
-  ];
-}
-
 #endif // GC_DIALECT_GC_PASSES

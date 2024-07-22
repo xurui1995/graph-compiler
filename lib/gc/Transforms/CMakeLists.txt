@@ -13,7 +13,7 @@ add_mlir_library(GCPasses
   OneDNNGraphToLinalg.cpp
   Pipeline.cpp
   DeepTileContractionNamedOp.cpp
-  Tiling.cpp
+  TilingUtil.cpp
   SinkOpIntoInnerLoop.cpp
   MergeNestedForall.cpp
 

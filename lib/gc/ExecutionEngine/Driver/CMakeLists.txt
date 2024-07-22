@@ -42,5 +42,6 @@ add_mlir_library(GCJitWrapper
     ${dialect_libs}
     ${conversion_libs}
     ${GC_PASSES}
+    GCAnalysis
   )
 
