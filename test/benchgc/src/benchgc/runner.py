@@ -15,6 +15,8 @@
 ################################################################################
 
 import gc_mlir._mlir_libs
+import gc_mlir.dialects
+import gc_mlir.dialects.func
 import gc_mlir.ir
 import torch
 from benchgc.mlir.util import MLIRCache
@@ -96,22 +98,10 @@ def dfs_block(
             return ret
 
 
-def ref_run(
-    module: gc_mlir.ir.Module, tensors: Dict[str, torch.Tensor], entry: str = '"entry"'
-):
-    entry_op: gc_mlir.ir.OpView | None = None
-    for op in module.operation.opview.regions[0].blocks[0].operations:
-        if str(op.name) == entry:
-            entry_op = op
-            break
-
+def ref_run(entry: gc_mlir.dialects.func.FuncOp, tensors: Dict[str, torch.Tensor]):
     # cache some information of block & op
-
     cache = MLIRCache()
 
-    if entry_op is None:
-        raise Exception("entry function %s is not found at the top level" % entry)
-    else:
-        ret = dfs_op(cache, entry_op, tensors)
-        if ret is not None:
-            return ret
+    ret = dfs_op(cache, entry, tensors)
+    if ret is not None:
+        return ret

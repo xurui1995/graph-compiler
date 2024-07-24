@@ -45,22 +45,32 @@ try:
         help="test which operation in the specified driver",
         type=str,
     )
+
     parser.add_argument(
-        "-i",
+        "--md",
         required=False,
+        help="format: #ARG:SHAPExTYPE",
+        type=str,
         default=[],
         action="append",
-        help="define the input arg name, data type, shape and filling type, eg. src:bf16:2x3x4:add:src",
-        type=str,
     )
     parser.add_argument(
-        "-o",
+        "--fill",
         required=False,
-        default=None,
-        action="append",
-        help="define the output arg name, data type, shape and check type, eg. dst:bf16:2x3x4:add:dst",
+        help="format: #ARG:type:parameter",
         type=str,
+        default=[],
+        action="append",
     )
+    parser.add_argument(
+        "--cmp",
+        required=False,
+        help="format: #ARG:type:parameter",
+        type=str,
+        default=[],
+        action="append",
+    )
+
     parser.add_argument(
         "--seed",
         required=False,
@@ -76,6 +86,7 @@ try:
         choices=[
             benchgc.util.NO_VERBOSE,
             benchgc.util.MODULE_VERBOSE,
+            benchgc.util.ARG_VERBOSE,
             benchgc.util.COMPARE_VERBOSE,
             benchgc.util.ERROR_OUTPUT_VERBOSE,
             benchgc.util.OUTPUT_VERBOSE,
@@ -106,54 +117,99 @@ except argparse.ArgumentError:
     sys.stderr.write("Argument parse failed\n")
     sys.exit(1)
 
-ins: List[Arg] = []
-outs: List[Arg] = []
+args: List[Arg] = []
 
-for i in range(len(flags.i)):
-    ins.append(Arg(flags.i[i], i))
-
-for i in range(len(flags.o)):
-    outs.append(Arg(flags.o[i], i))
-
-for i in range(len(ins)):
-    if ins[i].type == "D" and len(ins[i].param) == 0:
-        ins[i].set_default_fill_param(flags, ins, outs)
-
-if flags.driver == "linalg":
-    from .linalg import mlir_op
-
-    mlir_func = mlir_op[flags.case]
-    module = mlir_func(flags, ins, outs)
-elif flags.driver == "mlir":
+if flags.driver == "mlir":
+    # we need to find all args by reading the entry function
     with open(flags.case, "r") as mlir_file:
         with gc_mlir.ir.Context() as ctx:
             module = gc_mlir.ir.Module.parse(mlir_file.read())
+            entry = benchgc.mlir.util.get_entry(module)
+            idx: int = 0
+            # FIXME: only support RankTensorType now
+            for i in entry.type.inputs:
+                args.append(Arg(idx))
+                args[-1].dtype = str(i.element_type)
+                args[-1].shape = list(i.shape)
+                args[-1].set_scalar()
+                idx += 1
+
+            for o in entry.type.results:
+                args.append(Arg(idx))
+                args[-1].dtype = str(o.element_type)
+                args[-1].shape = list(o.shape)
+                args[-1].set_scalar()
+                idx += 1
+elif flags.driver in ["linalg"]:
+    # all arg shape/dt should be provided in single op test
+    for i in range(len(flags.md)):
+        args.append(Arg(i))
+
+    for md in flags.md:
+        colon = md.find(":")
+        if colon == -1:
+            raise Exception("Wrong md format: %s", md)
+        idx = int(md[:colon])
+        args[idx].set_md(md[colon + 1 :])
+
+    for fill in flags.fill:
+        colon = fill.find(":")
+        if colon == -1:
+            raise Exception("Wrong fill format: %s", fill)
+        idx = int(fill[:colon])
+        args[idx].set_fill(fill[colon + 1 :])
+
+    for cmp in flags.cmp:
+        colon = cmp.find(":")
+        if colon == -1:
+            raise Exception("Wrong fill format: %s", cmp)
+        idx = int(cmp[:colon])
+        args[idx].set_cmp(cmp[colon + 1 :])
+
+    from .linalg import mlir_op
+
+    mlir_func = mlir_op[flags.case]
+    module = mlir_func(flags, args)
 else:
     raise Exception("unsupported driver %s" % flags.driver)
+
+entry = benchgc.mlir.util.get_entry(module)
+
+for i in range(len(args)):
+    # use zero filling if the arg is return value
+    args[i].set_default_fill_param(flags, args, i >= len(entry.type.inputs))
+
+    args[i].set_default_compare_param(flags, args)
+
+for arg in args:
+    arg.print_verbose(flags.verbose)
 
 if flags.verbose >= benchgc.util.MODULE_VERBOSE:
     print(module)
 
+ref_args: List[torch.Tensor] = []
 gc_args: List[torch.Tensor | int] = []
-gc_out: List[torch.Tensor] = []
-tensors: Dict[str, torch.Tensor] = {}
-for i in range(len(ins)):
-    tensor = fill_tensor(flags, ins[i], i)
-    tensors["%arg" + str(i)] = tensor
-    # gc is sharing the same input with reference
-    if ins[i].scalar:
+ref_tensors: Dict[str, torch.Tensor] = {}
+gc_tensors: Dict[str, torch.Tensor] = {}
+
+for i in range(len(args)):
+    tensor = fill_tensor(flags, args[i], i)
+    gc_tensors["%arg" + str(i)] = tensor
+    ref_tensors["%arg" + str(i)] = tensor.clone()
+    ref_args.append(ref_tensors["%arg" + str(i)])
+    if args[i].scalar:
         gc_args.append(tensor.data_ptr())
     else:
         gc_args.append(tensor)
 
-for i in range(len(outs)):
-    tensor = torch.zeros(
-        size=outs[i].shape, dtype=benchgc.util.get_dtype(outs[i].dtype)
-    )
-    gc_args.append(tensor)
-    gc_out.append(tensor)
 
-ref_out = runner.ref_run(module, tensors)
+# ref_out contains return value of the entry
+ref_out = runner.ref_run(entry, ref_tensors)
+
+# we need to swap the result into the args if some arg is the return value
+if ref_out is not None:
+    for i in range(len(ref_out)):
+        ref_args[0 - i - 1] = ref_out[0 - i - 1]
 
 entry = "entry"
 
@@ -170,10 +226,12 @@ with module.context:
     engine.invoke(entry, *mlir_args)
 
 fail, mistrust = False, False
-for i in range(len(outs)):
-    out = outs[i]
-    out.set_default_compare_param(flags, ins, outs)
-    res = compare_tensor(out, ref_out[i], gc_out[i], flags.verbose)
+for i in range(len(args)):
+    # gc_arg contains address for scalar value
+    # we need to find result by arg name
+    res = compare_tensor(
+        args[i], ref_args[i], gc_tensors["%arg" + str(i)], flags.verbose
+    )
     fail = fail or (not res[0])
     if res[1] is not None:
         mistrust = mistrust | res[1]

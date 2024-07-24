@@ -26,17 +26,11 @@ from typing import Callable, List
 # from typing import Self
 
 
-def get_entry_args(module: gc_mlir.ir.Module, entry: str = '"entry"') -> List[str]:
-    entry_op: gc_mlir.ir.OpView | None = None
+def get_entry(module: gc_mlir.ir.Module, entry: str = '"entry"') -> func.FuncOp:
     for op in module.operation.opview.regions[0].blocks[0].operations:
         if str(op.name) == entry:
-            entry_op = op
-            break
-
-    if entry_op is None:
-        raise Exception("entry function %s is not found at the top level" % entry)
-    else:
-        return ["%arg" + str(i) for i in range(len(entry_op.type.inputs))]
+            return op
+    raise Exception("entry function %s is not found at the top level" % entry)
 
 
 def init_i1o1_module(

@@ -36,13 +36,13 @@ def ref_matmul_transpose_b(
 
 
 def mlir_matmul_transpose_b(
-    flags: argparse.Namespace, ins: List[Arg], outs: List[Arg]
+    flags: argparse.Namespace, args: List[Arg]
 ) -> gc_mlir.ir.Module:
     return init_i2o1_module(
-        ins[0],
-        ins[1],
-        outs[0],
+        args[0],
+        args[1],
+        args[2],
         lambda ctx, arg0, arg1: linalg.matmul_transpose_b(
-            arg0, arg1, outs=[outs[0].get_empty_op(ctx)], cast=TypeFnType(flags.cast)
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)], cast=TypeFnType(flags.cast)
         ),
     )

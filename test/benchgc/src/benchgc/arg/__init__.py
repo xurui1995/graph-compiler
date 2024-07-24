@@ -31,23 +31,51 @@ class Arg:
     dtype: str
     shape: List[int]
 
-    # filling type if arg is an input arg
-    # compare type if arg is an output arg
-    type: str
+    fill_type: str
+    fill_param: List[str]
 
-    param: List[str]
+    cmp_type: str
+    cmp_param: List[str]
+
     index: int
     scalar: bool
 
-    def __init__(self, cfg: str, index: int):
-        cfgs = cfg.split(":")
-        tensor_type = cfgs[0].split("x")
-        self.dtype = tensor_type[-1]
+    def __init__(self, index: int):
+        self.dtype = ""
+        self.fill_type = "-"
+        self.fill_param = []
+        self.cmp_type = "-"
+        self.cmp_param = []
+        self.index = index
 
+    def print_verbose(self, verbose: int):
+        if verbose >= benchgc.util.ARG_VERBOSE:
+            print(
+                "arg{} shape: {} dtype: {} fill_type: {} fill_param: {} cmp_type: {} cmp_param: {}".format(
+                    self.index,
+                    self.shape,
+                    self.dtype,
+                    self.fill_type,
+                    self.fill_param,
+                    self.cmp_type,
+                    self.cmp_param,
+                )
+            )
+
+    # md format:
+    # 0d memref/tensor: 0xf32
+    # nd memref/tensor: 2x3xf32
+    # scalar: f32
+    def set_md(self, md: str):
+        splited: List[str] = md.split("x")
+        self.dtype = splited[-1]
         self.shape = []
-        for dim in tensor_type[:-1]:
-            self.shape.append(int(dim))
 
+        for dim in splited[:-1]:
+            self.shape.append(int(dim))
+        self.set_scalar()
+
+    def set_scalar(self):
         # use 0xf32 to represent memref<f32>
         # use f32 to represent f32
         if self.shape == [0]:
@@ -58,9 +86,15 @@ class Arg:
         else:
             self.scalar = False
 
-        self.type = cfgs[1]
-        self.param = cfgs[2:]
-        self.index = index
+    def set_fill(self, fill: str):
+        splited: List[str] = fill.split(":")
+        self.fill_type = splited[0]
+        self.fill_param = splited[1:]
+
+    def set_cmp(self, cmp: str):
+        splited: List[str] = cmp.split(":")
+        self.cmp_type = splited[0]
+        self.cmp_param = splited[1:]
 
     def get_mlir_dtype(self, ctx: gc_mlir.ir.Context) -> gc_mlir.ir.Type:
         if self.dtype == "f32":
@@ -103,28 +137,35 @@ class Arg:
         return gc_mlir.dialects.tensor.EmptyOp(self.shape, self.get_mlir_dtype(ctx))
 
     def set_default_fill_param(
-        self,
-        flags: argparse.Namespace,
-        argin,  # List[Self]
-        argout,  # List[Self]
+        self, flags: argparse.Namespace, args, is_return_arg: bool  # List[Self]
     ):
-
-        if self.dtype == "" or self.type == "":
-            raise Exception("arg%d filling: dtype/fill_type is not set" % self.index)
-        if self.type == "D" and len(self.param) == 0:
-            # need to generate a default param for driver filling here
-            if flags.driver not in ["linalg"]:
+        if self.dtype == "":
+            raise Exception("arg%d filling: dtype is not set" % self.index)
+        if is_return_arg:
+            if self.fill_type != "-":
                 raise Exception(
-                    "unsupported driver %s for default filling" % flags.driver
+                    "arg%d filling: invalid data filling set on a return arg"
+                    % self.index
                 )
+            # set as zero filling
+            self.fill_type = "Z"
+            self.fill_param = []
+            return
 
-            if flags.case in ["add", "div", "mul"]:
-                self.param = [
+        if self.fill_type != "-":
+            # no need to handle filling type if it is not default
+            return
+
+        if flags.driver in ["linalg"]:
+            if flags.case in ["add", "div", "mul"] and self.index in [0, 1]:
+                self.fill_type = "D"
+                # fill src0 / src1
+                self.fill_param = [
                     "binary",
                     "src0" if self.index == 0 else "src1",
-                    argin[0].dtype,
-                    argin[1].dtype,
-                    argout[0].dtype,
+                    args[0].dtype,
+                    args[1].dtype,
+                    args[2].dtype,
                 ]
             elif flags.case in [
                 "batch_matmul",
@@ -135,15 +176,17 @@ class Arg:
                 "batch_reduce_matmul",
                 "batch_vecmat",
                 "matmul_transpose_b",
-            ]:
-                self.param = [
+            ] and self.index in [0, 1]:
+                self.fill_type = "D"
+                self.fill_param = [
                     "matmul",
                     "src" if self.index == 0 else "wei",
-                    argin[0].dtype,
-                    argin[1].dtype,
-                    argout[0].dtype,
+                    args[0].dtype,
+                    args[1].dtype,
+                    args[2].dtype,
                 ]
-
+                # for matmul, the result will be amplified by k
+                # so we need to find the k from the shape and append to the param to limit the fill range
                 if (
                     flags.case == "batch_matmul_transpose_a"
                     and self.index == 0
@@ -156,44 +199,48 @@ class Arg:
                     or flags.case == "batch_vecmat"
                     and self.index == 0
                 ):
-                    self.param.append(str(self.shape[-1]))
+                    self.fill_type = "D"
+                    self.fill_param.append(str(self.shape[-1]))
 
                 elif flags.case == "batch_reduce_matmul" and self.index == 0:
-                    self.param.append(str(self.shape[0] * self.shape[-1]))
+                    self.fill_type = "D"
+                    self.fill_param.append(str(self.shape[0] * self.shape[-1]))
                 elif flags.case == "batch_reduce_matmul" and self.index == 1:
-                    self.param.append(str(self.shape[0] * self.shape[-2]))
+                    self.fill_type = "D"
+                    self.fill_param.append(str(self.shape[0] * self.shape[-2]))
                 elif flags.case == "batch_mmt4d":
-                    self.param.append(str(self.shape[-1] * self.shape[-3]))
+                    self.fill_type = "D"
+                    self.fill_param.append(str(self.shape[-1] * self.shape[-3]))
                 else:
-                    self.param.append(str(self.shape[-2]))
+                    self.fill_type = "D"
+                    self.fill_param.append(str(self.shape[-2]))
             elif flags.case in ["abs", "negf", "exp"]:
-                self.param = ["eltwise", flags.case]
+                self.fill_type = "D"
+                self.fill_param = ["eltwise", flags.case]
                 if flags.case in ["abs", "exp"]:
-                    self.param.extend(["", ""])
+                    self.fill_param.extend(["", ""])
                 elif flags.case == "negf":
-                    self.param.extend(["-1", "0"])
+                    self.fill_param.extend(["-1", "0"])
+        if self.fill_type == "-":
+            # fall back to a default normal distribution filling
+            self.fill_type = "N"
+            self.fill_param = ["0", "1"]
 
     def set_default_compare_param(
         self,
         flags: argparse.Namespace,
-        argin,  # List[Self],
-        argout,  # List[Self]
+        args,  # List[Self],
     ):
-        if self.shape == [] or self.dtype == "" or self.type == "":
-            raise Exception(
-                "arg%d filling: shape/dtype/fill_type is not set" % self.index
-            )
-        if self.type == "D" and len(self.param) == 0:
-            # need to generate a default param for driver filling here
-            if flags.driver not in ["linalg"]:
-                raise Exception(
-                    "unsupported driver %s for default compare strategy" % flags.driver
-                )
+        if self.dtype == "":
+            raise Exception("arg%d compare: dtype is not set" % self.index)
+        if self.cmp_type != "-":
+            # no need to handle compare type if it is not default
+            return
 
+        if flags.driver in ["linalg"]:
             if flags.case in ["add", "div", "mul"]:
-                self.param = [
-                    "binary",
-                ]
+                self.cmp_type = "D"
+                self.cmp_param = ["binary"]
             elif flags.case in [
                 "batch_matmul",
                 "batch_matmul_transpose_a",
@@ -204,40 +251,52 @@ class Arg:
                 "batch_vecmat",
                 "matmul_transpose_b",
             ]:
-                self.param = ["matmul"]
+                self.cmp_type = "D"
+                self.cmp_param = ["matmul"]
             elif flags.case in ["abs", "negf", "exp"]:
-                self.param = ["eltwise"]
+                self.cmp_type = "D"
+                self.cmp_param = ["eltwise"]
+
+        if self.cmp_type == "-":
+            # p2p check with a default threshold based on data type
+            # do not check mistrust
+            dtype: torch.dtype = benchgc.util.get_dtype(self.dtype)
+            self.cmp_type = "P"
+            if dtype.is_floating_point:
+                self.cmp_param = [str(torch.finfo(dtype).eps), "0"]
+            else:
+                self.cmp_param = ["0", "0"]
 
 
 def fill_tensor(flags: argparse.Namespace, arg: Arg, idx: int) -> torch.Tensor:
-    if arg.dtype == "" or arg.type == "":
+    if arg.dtype == "" or arg.fill_type == "":
         raise Exception("arg%d filling: dtype/fill_type is not set" % idx)
 
-    if arg.type == "N" and len(arg.param) == 2:
+    if arg.fill_type == "N" and len(arg.fill_param) == 2:
         # Normal distribution
-        mean = float(arg.param[0])
-        std = float(arg.param[1])
+        mean = float(arg.fill_param[0])
+        std = float(arg.fill_param[1])
         tensor = torch.normal(mean=mean, std=std, size=arg.shape)
 
-    elif arg.type == "P" and len(arg.param) == 1:
+    elif arg.fill_type == "P" and len(arg.fill_param) == 1:
         # Poisson distribution
-        _lambda = float(arg.param[0])
+        _lambda = float(arg.fill_param[0])
         lambda_tensor = torch.full(arg.shape, _lambda)
         tensor = torch.poisson(lambda_tensor)
-    elif arg.type == "B" and len(arg.param) == 2:
+    elif arg.fill_type == "B" and len(arg.fill_param) == 2:
         # Binomial distribution
-        n = int(arg.param[0])
-        p = float(arg.param[1])
+        n = int(arg.fill_param[0])
+        p = float(arg.fill_param[1])
         bdist = torch.distributions.binomial.Binomial(total_count=n, probs=p)
         tensor = bdist.sample(torch.Size(arg.shape))
-    elif arg.type == "U" and len(arg.param) == 2:
+    elif arg.fill_type == "U" and len(arg.fill_param) == 2:
         # Uniform distribution
-        a = float(arg.param[0])
-        b = float(arg.param[1])
+        a = float(arg.fill_param[0])
+        b = float(arg.fill_param[1])
         tensor = torch.distributions.uniform.Uniform(a, b).sample(torch.Size(arg.shape))
-    elif arg.type == "F" and len(arg.param) == 1:
+    elif arg.fill_type == "F" and len(arg.fill_param) == 1:
         # read from pytorch tensor dump file
-        filename = arg.param[0]
+        filename = arg.fill_param[0]
         tensor = torch.load(f=filename)
         if not isinstance(tensor, torch.Tensor):
             raise Exception(
@@ -251,13 +310,15 @@ def fill_tensor(flags: argparse.Namespace, arg: Arg, idx: int) -> torch.Tensor:
             raise Exception(
                 "tensor object from file %s does not match dtype" % filename
             )
-    elif arg.type == "D" and len(arg.param) > 0:
+    elif arg.fill_type == "D" and len(arg.fill_param) > 0:
         # Driver fill
-        driver: str = arg.param[0]
+        driver: str = arg.fill_param[0]
         driver_module = importlib.import_module("benchgc.arg.%s" % driver)
         tensor = driver_module.fill(
-            arg.shape, benchgc.util.get_dtype(arg.dtype), arg.param[1:]
+            arg.shape, benchgc.util.get_dtype(arg.dtype), arg.fill_param[1:]
         )
+    elif arg.fill_type == "Z":
+        tensor = torch.zeros(size=arg.shape)
     else:
         raise Exception("invalid fill type or fill parameter")
 
@@ -271,15 +332,16 @@ def fill_tensor(flags: argparse.Namespace, arg: Arg, idx: int) -> torch.Tensor:
 def compare_tensor(
     arg: Arg, ref: torch.Tensor, res: torch.Tensor, verbose: int
 ) -> Tuple[bool, bool | None]:
-    if arg.type == "P":  # p2p check
-        threshold = float(arg.param[0])
-        zero_percent = float(arg.param[1])
+
+    if arg.cmp_type == "P":  # p2p check
+        threshold = float(arg.cmp_param[0])
+        zero_percent = float(arg.cmp_param[1])
         return p2p(threshold, zero_percent, ref, res, verbose)
-    if arg.type == "N":  # norm check
-        threshold = float(arg.param[0])
+    if arg.cmp_type == "N":  # norm check
+        threshold = float(arg.cmp_param[0])
         return norm(threshold, ref, res, verbose)
-    elif arg.type == "D" and len(arg.param) > 0:  # driver check
-        driver: str = arg.param[0]
+    elif arg.cmp_type == "D" and len(arg.cmp_param) > 0:  # driver check
+        driver: str = arg.cmp_param[0]
         driver_module = importlib.import_module("benchgc.arg.%s" % driver)
         return driver_module.compare(ref, res, verbose)
     else:
@@ -287,6 +349,9 @@ def compare_tensor(
 
 
 def iterate_tensor(tensor: torch.Tensor, fn: Callable[[Tuple[int, ...]], None]):
+    if tensor.ndim == 0:
+        fn(tuple())
+        return
     index: List[int] = [0] * tensor.ndim
 
     def dfs(depth: int):
@@ -332,7 +397,7 @@ def p2p(
     f32_ref = ref.to(torch.float32)
     f32_res = res.to(torch.float32)
 
-    check = torch.BoolTensor([False])
+    check = torch.tensor(False)
 
     check = check.bitwise_or(torch.bitwise_and(f32_ref.isnan(), f32_res.isnan()))
     check = check.bitwise_or(torch.bitwise_and(f32_ref.isneginf(), f32_res.isneginf()))

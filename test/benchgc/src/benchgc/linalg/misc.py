@@ -43,15 +43,13 @@ def ref_broadcast(
     var[cache.res[0]] = var[cache.opr[0]].reshape(tmp_shape).broadcast_to(dst_shape)
 
 
-def mlir_broadcast(
-    flags: argparse.Namespace, ins: List[Arg], outs: List[Arg]
-) -> gc_mlir.ir.Module:
+def mlir_broadcast(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
 
     return init_i1o1_module(
-        ins[0],
-        outs[0],
+        args[0],
+        args[1],
         lambda ctx, arg0: linalg.broadcast(
-            arg0, outs=[outs[0].get_empty_op(ctx)], dimensions=flags.dimensions
+            arg0, outs=[args[1].get_empty_op(ctx)], dimensions=flags.dimensions
         ),
     )
 
@@ -60,14 +58,12 @@ def ref_fill(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tenso
     var[cache.res[0]] = torch.full(tuple(op.results[0].type.shape), var[cache.opr[0]])
 
 
-def mlir_fill(
-    flags: argparse.Namespace, ins: List[Arg], outs: List[Arg]
-) -> gc_mlir.ir.Module:
+def mlir_fill(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
     return init_i1o1_module(
-        ins[0],
-        outs[0],
+        args[0],
+        args[1],
         lambda ctx, arg0: linalg.fill(
-            arg0, outs=[outs[0].get_empty_op(ctx)], dimensions=flags.dimensions
+            arg0, outs=[args[1].get_empty_op(ctx)], dimensions=flags.dimensions
         ),
     )
 
@@ -80,14 +76,12 @@ def ref_copy(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tenso
     )
 
 
-def mlir_copy(
-    flags: argparse.Namespace, ins: List[Arg], outs: List[Arg]
-) -> gc_mlir.ir.Module:
+def mlir_copy(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
 
     return init_i1o1_module(
-        ins[0],
-        outs[0],
+        args[0],
+        args[1],
         lambda ctx, arg0: linalg.copy(
-            arg0, outs=[outs[0].get_empty_op(ctx)], cast=TypeFnType(flags.cast)
+            arg0, outs=[args[1].get_empty_op(ctx)], cast=TypeFnType(flags.cast)
         ),
     )

@@ -25,9 +25,7 @@ from typing import Dict, Callable, List
 ref_op: Dict[
     str, Callable[[MLIRCache, gc_mlir.ir.OpView, Dict[str, torch.Tensor]], None]
 ] = {}
-mlir_op: Dict[
-    str, Callable[[argparse.Namespace, List[Arg], List[Arg]], gc_mlir.ir.Module]
-] = {}
+mlir_op: Dict[str, Callable[[argparse.Namespace, List[Arg]], gc_mlir.ir.Module]] = {}
 
 for dri in ["binary", "matmul", "eltwise", "misc", "generic"]:
     mod = importlib.import_module("benchgc.linalg.%s" % dri)
