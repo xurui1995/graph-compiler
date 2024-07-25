@@ -91,7 +91,7 @@ module {
 
 | description | cmp_type | cmp_parameter |
 |-------------|-----------|-----------|
-| P2P check | Z | threshold, zero_percent(mistrust check) |
+| P2P check | P | threshold, zero_percent(mistrust check) |
 | Norm check | N | threshold |
 | Benchdnn driver | D | driver_name |
 

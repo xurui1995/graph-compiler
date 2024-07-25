@@ -23,19 +23,7 @@ python3 -m benchgc --verbose 0 --driver linalg --case negf --md 0:32x4096xf32 --
 python3 -m benchgc --verbose 0 --driver linalg --case exp --md 0:32x4096xf32 --md 1:32x4096xf32 || FAIL=1
 
 # mlir
-# python3 -m benchgc --verbose 0 --driver mlir --case ${CASE_DIR}/llama2.mlir \
-#     --md 0:1x32x4096xbf16 \
-#     --md 1:4096x4096xbf16 \
-#     --md 2:1x32x4096xbf16 \
-#     --md 3:1xf32 \
-#     --md 4:4096xbf16 \
-#     --md 5:11008x4096xbf16 \
-#     --md 6:11008x4096xbf16 \
-#     --md 7:4096x11008xbf16 \
-#     --md 8:1xf32 \
-#     --md 9:4096xbf16 \
-#     --md 10:1x32x4096xbf16 \
-#     --md 10:1x32x4096xbf16 || FAIL=1
+# python3 -m benchgc --verbose 0 --driver mlir --case ${CASE_DIR}/llama2.mlir || FAIL=1
 
 set +e
 exit $FAIL

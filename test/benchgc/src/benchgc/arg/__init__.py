@@ -192,7 +192,6 @@ class Arg:
                     and self.index == 0
                     or flags.case == "batch_matmul_transpose_b"
                     or flags.case == "matmul_transpose_b"
-                    and self.index == 1
                     or flags.case == "batch_matmul"
                     and self.index == 0
                     or flags.case == "batch_matvec"
