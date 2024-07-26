@@ -18,7 +18,9 @@ import torch
 import ctypes
 
 from typing import List, Any
-from benchgc.mlir.util import dtype_to_ctype
+from benchgc.mlir.util import dtype_to_ctype, str_to_mlir_dtype
+import gc_mlir.dialects.tensor
+import gc_mlir.ir
 
 
 # scalar should give a address
@@ -70,3 +72,52 @@ def get_md(tensor: torch.Tensor):
     )
     md.offset = ctypes.c_longlong(0)
     return md
+
+class MLIRArg:
+    dtype: str
+    shape: List[int]
+
+    scalar: bool
+
+    def __init__(self) -> None:
+        self.dtype = ""
+
+    # md format:
+    # 0d memref/tensor: 0xf32
+    # nd memref/tensor: 2x3xf32
+    # scalar: f32
+    def set_md(self, md: str):
+        splited: List[str] = md.split("x")
+        self.dtype = splited[-1]
+        self.shape = []
+
+        for dim in splited[:-1]:
+            self.shape.append(int(dim))
+        self.set_scalar()
+
+    def set_scalar(self):
+        # use 0xf32 to represent memref<f32>
+        # use f32 to represent f32
+        if self.shape == [0]:
+            self.shape = []
+            self.scalar = False
+        elif self.shape == []:
+            self.scalar = True
+        else:
+            self.scalar = False
+
+    def get_mlir_type(self, ctx: gc_mlir.ir.Context) -> gc_mlir.ir.Type:
+        if self.shape == []:
+            return str_to_mlir_dtype(ctx, self.dtype)
+        else:
+            return gc_mlir.ir.RankedTensorType.get(self.shape, str_to_mlir_dtype(ctx, self.dtype))
+
+    def get_ranked_tensor_type(
+        self, ctx: gc_mlir.ir.Context
+    ) -> gc_mlir.ir.RankedTensorType:
+        return gc_mlir.ir.RankedTensorType.get(self.shape, str_to_mlir_dtype(ctx, self.dtype))
+
+    def get_empty_op(self, ctx: gc_mlir.ir.Context) -> gc_mlir.dialects.tensor.EmptyOp:
+        if self.shape == []:
+            raise Exception("shape is unknown")
+        return gc_mlir.dialects.tensor.EmptyOp(self.shape, str_to_mlir_dtype(ctx, self.dtype))

@@ -20,10 +20,11 @@ import gc_mlir.ir
 import copy
 
 import benchgc.util
-from benchgc.mlir.util import MLIRCache, init_i1o1_module
+from benchgc.mlir.util import MLIRCache
 from gc_mlir._mlir_libs._mlir.ir import DenseI64ArrayAttr
 from gc_mlir.dialects import linalg
 from gc_mlir.dialects.linalg.opdsl.lang.comprehension import TypeFnType
+from benchgc.mlir.module import init_i1o1_module
 
 from benchgc.arg import Arg
 from typing import Dict, List

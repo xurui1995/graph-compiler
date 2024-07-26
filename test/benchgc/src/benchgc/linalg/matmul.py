@@ -19,7 +19,8 @@ import argparse
 from gc_mlir.dialects.linalg.opdsl.lang.comprehension import TypeFnType
 import gc_mlir.ir
 
-from benchgc.mlir.util import MLIRCache, init_i2o1_module
+from benchgc.mlir.util import MLIRCache
+from benchgc.mlir.module import init_i2o1_module
 
 from gc_mlir.dialects import linalg
 

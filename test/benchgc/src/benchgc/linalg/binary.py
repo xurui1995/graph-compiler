@@ -18,7 +18,8 @@ import torch
 import argparse
 
 from benchgc.arg import Arg
-from benchgc.mlir.util import MLIRCache, init_i2o1_module
+from benchgc.mlir.util import MLIRCache
+from benchgc.mlir.module import init_i2o1_module
 from typing import Dict, List
 
 from gc_mlir.dialects import linalg

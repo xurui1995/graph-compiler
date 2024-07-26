@@ -21,7 +21,6 @@ from typing import List, Dict, Tuple
 
 # params format: [src0 | src1, src0 dt, src1 dt, dst dt]
 
-
 def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tensor:
     name, _, _, _ = params
 

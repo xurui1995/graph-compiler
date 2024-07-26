@@ -22,15 +22,10 @@ from typing import List, Tuple, Callable
 # only python 3.11 support
 # from typing import Self
 import benchgc.util
+import benchgc.mlir.arg
 import importlib
-import gc_mlir.ir
-import gc_mlir.dialects.tensor
 
-
-class Arg:
-    dtype: str
-    shape: List[int]
-
+class Arg(benchgc.mlir.arg.MLIRArg):
     fill_type: str
     fill_param: List[str]
 
@@ -38,7 +33,6 @@ class Arg:
     cmp_param: List[str]
 
     index: int
-    scalar: bool
 
     def __init__(self, index: int):
         self.dtype = ""
@@ -62,30 +56,6 @@ class Arg:
                 )
             )
 
-    # md format:
-    # 0d memref/tensor: 0xf32
-    # nd memref/tensor: 2x3xf32
-    # scalar: f32
-    def set_md(self, md: str):
-        splited: List[str] = md.split("x")
-        self.dtype = splited[-1]
-        self.shape = []
-
-        for dim in splited[:-1]:
-            self.shape.append(int(dim))
-        self.set_scalar()
-
-    def set_scalar(self):
-        # use 0xf32 to represent memref<f32>
-        # use f32 to represent f32
-        if self.shape == [0]:
-            self.shape = []
-            self.scalar = False
-        elif self.shape == []:
-            self.scalar = True
-        else:
-            self.scalar = False
-
     def set_fill(self, fill: str):
         splited: List[str] = fill.split(":")
         self.fill_type = splited[0]
@@ -95,46 +65,6 @@ class Arg:
         splited: List[str] = cmp.split(":")
         self.cmp_type = splited[0]
         self.cmp_param = splited[1:]
-
-    def get_mlir_dtype(self, ctx: gc_mlir.ir.Context) -> gc_mlir.ir.Type:
-        if self.dtype == "f32":
-            return gc_mlir.ir.F32Type.get(ctx)
-        elif self.dtype == "f64":
-            return gc_mlir.ir.F64Type.get(ctx)
-        elif self.dtype == "f16":
-            return gc_mlir.ir.F16Type.get(ctx)
-        elif self.dtype == "bf16":
-            return gc_mlir.ir.BF16Type.get(ctx)
-        elif self.dtype == "u8":
-            return gc_mlir.ir.IntegerType.get_unsigned(8, ctx)
-        elif self.dtype == "s8":
-            return gc_mlir.ir.IntegerType.get_signed(8, ctx)
-        elif self.dtype == "boolean":
-            return gc_mlir.ir.IntegerType.get_unsigned(1, ctx)
-        elif self.dtype == "f8_e4m3":
-            return gc_mlir.ir.Float8E4M3FNType.get(ctx)
-        elif self.dtype == "f8_e5m2":
-            return gc_mlir.ir.Float8E5M2Type.get(ctx)
-        elif self.dtype == "s32":
-            return gc_mlir.ir.IntegerType.get_signed(32, ctx)
-        else:
-            raise Exception("data type not support: %s" % self.dtype)
-
-    def get_mlir_type(self, ctx: gc_mlir.ir.Context) -> gc_mlir.ir.Type:
-        if self.shape == []:
-            return self.get_mlir_dtype(ctx)
-        else:
-            return gc_mlir.ir.RankedTensorType.get(self.shape, self.get_mlir_dtype(ctx))
-
-    def get_ranked_tensor_type(
-        self, ctx: gc_mlir.ir.Context
-    ) -> gc_mlir.ir.RankedTensorType:
-        return gc_mlir.ir.RankedTensorType.get(self.shape, self.get_mlir_dtype(ctx))
-
-    def get_empty_op(self, ctx: gc_mlir.ir.Context) -> gc_mlir.dialects.tensor.EmptyOp:
-        if self.shape == []:
-            raise Exception("shape is unknown")
-        return gc_mlir.dialects.tensor.EmptyOp(self.shape, self.get_mlir_dtype(ctx))
 
     def set_default_fill_param(
         self, flags: argparse.Namespace, args, is_return_arg: bool  # List[Self]
