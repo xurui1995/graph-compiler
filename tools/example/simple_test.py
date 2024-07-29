@@ -47,8 +47,6 @@ if __name__ == "__main__":
         )
         torch_arg0 = torch.full((10, 10), 1.0, dtype=torch.bfloat16)
         torch_arg1 = torch.full((10, 10), 1.0, dtype=torch.bfloat16)
-        # torch_arg0 = torch.randn((10, 10), dtype=torch.bfloat16)
-        # torch_arg1 = torch.randn((10, 10), dtype=torch.bfloat16)
         ref_res = torch.matmul(torch_arg0, torch_arg1)
 
         np_arg0 = torch_arg0.view(dtype=torch.uint16).numpy().view(ml_dtypes.bfloat16)
@@ -58,23 +56,9 @@ if __name__ == "__main__":
         entry = "main_entry"
         mlir_args = get_mlir_args(module, entry, [np_arg0, np_arg1, gc_res])
         passes = "any(gc-cpu-pipeline)"
-        shared_libs = [
-            os.environ["MLIR_C_RUNNER_UTILS"],
-            os.environ["MLIR_RUNNER_UTILS"],
-        ]
-
-        # bench
-        # _, cost = py_timeit_bench(
-        #     module,
-        #     "main_entry",
-        #     passes,
-        #     mlir_args,
-        #     shared_libs,
-        # )
-        # print("cost=", cost)
-
+        
         # just run
-        compiler = GraphCompiler(passes, shared_libs)
+        compiler = GraphCompiler(passes)
         engine = compiler.compile_and_jit(module)
         engine.invoke(entry, *mlir_args)
 
