@@ -16,11 +16,30 @@
 
 import torch
 import benchgc.util
-import benchgc.arg
-from typing import List, Tuple
+from benchgc.arg.arg import Arg
+from benchgc.arg.compare import p2p
+import argparse
+from typing import List, Tuple, Set
 
 
 # params format: [alg, alpha, beta]
+
+# op should use this filling
+
+op: Set[str] = set(["linalg.abs", "linalg.negf", "linalg.exp"])
+
+def default_fill(flags: argparse.Namespace, 
+                 arg: Arg,
+                 arglist: List[Arg],):
+    if arg.index > 0:
+        raise Exception("eltwise fill: dst filling is not allowed")
+    arg.fill_param = ["eltwise", flags.case]
+    if flags.driver == "linalg" and flags.case in ["abs", "exp"]:
+        arg.fill_param.extend(["", ""])
+    elif flags.driver == "linalg" and flags.case in ["negf"]:
+        arg.fill_param.extend(["-1", "0"])
+    arg.fill_type = "D"
+
 def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tensor:
     alg, alpha, beta = params
     nelems = benchgc.util.nelem(shape)
@@ -93,13 +112,19 @@ def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tenso
     return value.reshape(shape)
 
 
+def default_compare(flags: argparse.Namespace,
+                    arg: Arg,
+                    arglist: List[Arg],):
+    arg.cmp_type = "D"
+    arg.cmp_param = ["eltwise"]
+
 def compare(
     ref: torch.Tensor, res: torch.Tensor, verbose: int
 ) -> Tuple[bool, bool | None]:
     dtype = ref.dtype
     ref = ref.to(torch.float)
     res = res.to(torch.float)
-    return benchgc.arg.p2p(
+    return p2p(
         4e-6 if dtype == torch.float else benchgc.util.get_eps(dtype),
         65 if dtype.is_signed else 99.0,
         ref,

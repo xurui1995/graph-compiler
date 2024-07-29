@@ -20,7 +20,8 @@ import argparse
 
 import torch
 
-from benchgc.arg import Arg, fill_tensor, compare_tensor
+from benchgc.arg.arg import Arg
+from benchgc.arg import fill_tensor, compare_tensor, set_default_compare, set_default_fill
 from typing import Dict, List
 import runner
 import benchgc.util
@@ -177,9 +178,9 @@ entry = benchgc.mlir.util.get_entry(module)
 
 for i in range(len(args)):
     # use zero filling if the arg is return value
-    args[i].set_default_fill_param(flags, args, i >= len(entry.type.inputs))
+    set_default_fill(flags, args[i], args, i >= len(entry.type.inputs))
 
-    args[i].set_default_compare_param(flags, args)
+    set_default_compare(flags, args[i], args)
 
 for arg in args:
     arg.print_verbose(flags.verbose)

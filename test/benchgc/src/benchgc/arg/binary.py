@@ -16,10 +16,28 @@
 
 import torch
 import benchgc.util
-import benchgc.arg
-from typing import List, Dict, Tuple
+from benchgc.arg.arg import Arg
+from benchgc.arg.compare import p2p
+import argparse
+from typing import List, Dict, Tuple, Set
+
+# op should use this filling
+
+op: Set[str] = set(["linalg.add", "linalg.div", "linalg.mul"])
 
 # params format: [src0 | src1, src0 dt, src1 dt, dst dt]
+
+def default_fill(flags: argparse.Namespace, 
+                 arg: Arg,
+                 arglist: List[Arg],):
+    if arg.index > 1:
+        raise Exception("binary fill: dst filling is not allowed")
+    arg.fill_type = "D"
+    arg.fill_param = ["binary", 
+                      "src0" if arg.index == 0 else "src1",
+                      arglist[0].dtype,
+                      arglist[1].dtype,
+                      arglist[2].dtype,]
 
 def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tensor:
     name, _, _, _ = params
@@ -41,6 +59,11 @@ def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tenso
         values = torch.where(values == 0.0, 1, values)
     return values.to(dtype=dtype)
 
+def default_compare(flags: argparse.Namespace,
+                    arg: Arg,
+                    arglist: List[Arg],):
+    arg.cmp_type = "D"
+    arg.cmp_param = ["binary"]
 
 def compare(
     ref: torch.Tensor, res: torch.Tensor, verbose: int
@@ -48,7 +71,7 @@ def compare(
     dtype = ref.dtype
     ref = ref.to(torch.float)
     res = res.to(torch.float)
-    return benchgc.arg.p2p(
+    return p2p(
         benchgc.util.get_eps(dtype),
         30.0 if dtype.is_signed else 45.0,
         ref,

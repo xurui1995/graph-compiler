@@ -16,186 +16,55 @@
 
 import argparse
 import torch
-import numpy
-from typing import List, Tuple, Callable
 
-# only python 3.11 support
-# from typing import Self
 import benchgc.util
-import benchgc.mlir.arg
-import importlib
+from benchgc.arg.arg import Arg
 
-class Arg(benchgc.mlir.arg.MLIRArg):
-    fill_type: str
-    fill_param: List[str]
+from typing import List, Tuple
 
-    cmp_type: str
-    cmp_param: List[str]
+import benchgc.arg.binary as binary
+import benchgc.arg.eltwise as eltwise
+import benchgc.arg.matmul as matmul
 
-    index: int
 
-    def __init__(self, index: int):
-        self.dtype = ""
-        self.fill_type = "-"
-        self.fill_param = []
-        self.cmp_type = "-"
-        self.cmp_param = []
-        self.index = index
+onednn_module = {
+    "binary": binary,
+    "eltwise": eltwise,
+    "matmul": matmul,
+}
 
-    def print_verbose(self, verbose: int):
-        if verbose >= benchgc.util.ARG_VERBOSE:
-            print(
-                "arg{} shape: {} dtype: {} fill_type: {} fill_param: {} cmp_type: {} cmp_param: {}".format(
-                    self.index,
-                    self.shape,
-                    self.dtype,
-                    self.fill_type,
-                    self.fill_param,
-                    self.cmp_type,
-                    self.cmp_param,
-                )
-            )
+def set_default_fill(flags: argparse.Namespace, arg: Arg, arglist: List[Arg], is_return: bool):
+    if arg.fill_type != "-":
+        return
+    
+    if is_return:
+        arg.fill_type = "Z"
+        arg.fill_param = []
+        return
 
-    def set_fill(self, fill: str):
-        splited: List[str] = fill.split(":")
-        self.fill_type = splited[0]
-        self.fill_param = splited[1:]
+    for (_, module) in onednn_module.items():
+        if flags.driver + "." + flags.case in module.op:
+            module.default_fill(flags, arg, arglist)
+            return
+    # use N(0, 1) as default 
+    arg.fill_type = "N"
+    arg.fill_param = ["0", "1"]
 
-    def set_cmp(self, cmp: str):
-        splited: List[str] = cmp.split(":")
-        self.cmp_type = splited[0]
-        self.cmp_param = splited[1:]
+def set_default_compare(flags: argparse.Namespace, arg: Arg, arglist: List[Arg]):
+    if arg.cmp_type != "-":
+        return
 
-    def set_default_fill_param(
-        self, flags: argparse.Namespace, args, is_return_arg: bool  # List[Self]
-    ):
-        if self.dtype == "":
-            raise Exception("arg%d filling: dtype is not set" % self.index)
-        if is_return_arg:
-            if self.fill_type != "-":
-                raise Exception(
-                    "arg%d filling: invalid data filling set on a return arg"
-                    % self.index
-                )
-            # set as zero filling
-            self.fill_type = "Z"
-            self.fill_param = []
+    for (_, module) in onednn_module.items():
+        if flags.driver + "." + flags.case in module.op:
+            module.default_compare(flags, arg, arglist)
             return
 
-        if self.fill_type != "-":
-            # no need to handle filling type if it is not default
-            return
-
-        if flags.driver in ["linalg"]:
-            if flags.case in ["add", "div", "mul"] and self.index in [0, 1]:
-                self.fill_type = "D"
-                # fill src0 / src1
-                self.fill_param = [
-                    "binary",
-                    "src0" if self.index == 0 else "src1",
-                    args[0].dtype,
-                    args[1].dtype,
-                    args[2].dtype,
-                ]
-            elif flags.case in [
-                "batch_matmul",
-                "batch_matmul_transpose_a",
-                "batch_matmul_transpose_b",
-                "batch_matvec",
-                "batch_mmt4d",
-                "batch_reduce_matmul",
-                "batch_vecmat",
-                "matmul_transpose_b",
-            ] and self.index in [0, 1]:
-                self.fill_type = "D"
-                self.fill_param = [
-                    "matmul",
-                    "src" if self.index == 0 else "wei",
-                    args[0].dtype,
-                    args[1].dtype,
-                    args[2].dtype,
-                ]
-                # for matmul, the result will be amplified by k
-                # so we need to find the k from the shape and append to the param to limit the fill range
-                if (
-                    flags.case == "batch_matmul_transpose_a"
-                    and self.index == 0
-                    or flags.case == "batch_matmul_transpose_b"
-                    or flags.case == "matmul_transpose_b"
-                    or flags.case == "batch_matmul"
-                    and self.index == 0
-                    or flags.case == "batch_matvec"
-                    or flags.case == "batch_vecmat"
-                    and self.index == 0
-                ):
-                    self.fill_type = "D"
-                    self.fill_param.append(str(self.shape[-1]))
-
-                elif flags.case == "batch_reduce_matmul" and self.index == 0:
-                    self.fill_type = "D"
-                    self.fill_param.append(str(self.shape[0] * self.shape[-1]))
-                elif flags.case == "batch_reduce_matmul" and self.index == 1:
-                    self.fill_type = "D"
-                    self.fill_param.append(str(self.shape[0] * self.shape[-2]))
-                elif flags.case == "batch_mmt4d":
-                    self.fill_type = "D"
-                    self.fill_param.append(str(self.shape[-1] * self.shape[-3]))
-                else:
-                    self.fill_type = "D"
-                    self.fill_param.append(str(self.shape[-2]))
-            elif flags.case in ["abs", "negf", "exp"]:
-                self.fill_type = "D"
-                self.fill_param = ["eltwise", flags.case]
-                if flags.case in ["abs", "exp"]:
-                    self.fill_param.extend(["", ""])
-                elif flags.case == "negf":
-                    self.fill_param.extend(["-1", "0"])
-        if self.fill_type == "-":
-            # fall back to a default normal distribution filling
-            self.fill_type = "N"
-            self.fill_param = ["0", "1"]
-
-    def set_default_compare_param(
-        self,
-        flags: argparse.Namespace,
-        args,  # List[Self],
-    ):
-        if self.dtype == "":
-            raise Exception("arg%d compare: dtype is not set" % self.index)
-        if self.cmp_type != "-":
-            # no need to handle compare type if it is not default
-            return
-
-        if flags.driver in ["linalg"]:
-            if flags.case in ["add", "div", "mul"]:
-                self.cmp_type = "D"
-                self.cmp_param = ["binary"]
-            elif flags.case in [
-                "batch_matmul",
-                "batch_matmul_transpose_a",
-                "batch_matmul_transpose_b",
-                "batch_matvec",
-                "batch_mmt4d",
-                "batch_reduce_matmul",
-                "batch_vecmat",
-                "matmul_transpose_b",
-            ]:
-                self.cmp_type = "D"
-                self.cmp_param = ["matmul"]
-            elif flags.case in ["abs", "negf", "exp"]:
-                self.cmp_type = "D"
-                self.cmp_param = ["eltwise"]
-
-        if self.cmp_type == "-":
-            # p2p check with a default threshold based on data type
-            # do not check mistrust
-            dtype: torch.dtype = benchgc.util.get_dtype(self.dtype)
-            self.cmp_type = "P"
-            if dtype.is_floating_point:
-                self.cmp_param = [str(torch.finfo(dtype).eps), "0"]
-            else:
-                self.cmp_param = ["0", "0"]
-
+    dtype: torch.dtype = benchgc.util.get_dtype(arg.dtype)
+    arg.cmp_type = "P"
+    if dtype.is_floating_point:
+        arg.cmp_param = [str(torch.finfo(dtype).eps), "0"]
+    else:
+        arg.cmp_param = ["0", "0"]
 
 def fill_tensor(flags: argparse.Namespace, arg: Arg, idx: int) -> torch.Tensor:
     if arg.dtype == "" or arg.fill_type == "":
@@ -242,7 +111,7 @@ def fill_tensor(flags: argparse.Namespace, arg: Arg, idx: int) -> torch.Tensor:
     elif arg.fill_type == "D" and len(arg.fill_param) > 0:
         # Driver fill
         driver: str = arg.fill_param[0]
-        driver_module = importlib.import_module("benchgc.arg.%s" % driver)
+        driver_module = onednn_module[driver]
         tensor = driver_module.fill(
             arg.shape, benchgc.util.get_dtype(arg.dtype), arg.fill_param[1:]
         )
@@ -271,119 +140,7 @@ def compare_tensor(
         return norm(threshold, ref, res, verbose)
     elif arg.cmp_type == "D" and len(arg.cmp_param) > 0:  # driver check
         driver: str = arg.cmp_param[0]
-        driver_module = importlib.import_module("benchgc.arg.%s" % driver)
+        driver_module = onednn_module[driver]
         return driver_module.compare(ref, res, verbose)
     else:
         raise Exception("invalid compare type or compare parameter")
-
-
-def iterate_tensor(tensor: torch.Tensor, fn: Callable[[Tuple[int, ...]], None]):
-    if tensor.ndim == 0:
-        fn(tuple())
-        return
-    index: List[int] = [0] * tensor.ndim
-
-    def dfs(depth: int):
-        if depth == tensor.ndim:
-            fn(tuple(index))
-        else:
-            for i in range(tensor.shape[depth]):
-                index[depth] = i
-                dfs(depth + 1)
-
-    dfs(0)
-
-
-def norm(
-    threshold: float, ref: torch.Tensor, res: torch.Tensor, verbose: int
-) -> Tuple[bool, bool | None]:
-
-    f32_ref = ref.to(torch.float32)
-    f32_res = res.to(torch.float32)
-    if f32_ref.nelement() == 0:
-        return (True, None)
-
-    diff_square_sum = torch.square(torch.subtract(f32_ref, f32_res)).sum()
-    square_sum = torch.square(f32_ref).sum()
-
-    l2_diff_norm = torch.sqrt(diff_square_sum / square_sum).item()
-    if verbose >= benchgc.util.COMPARE_VERBOSE:
-        print("norm check: %.10f / threshold: %.10f" % (l2_diff_norm, threshold))
-
-    return (l2_diff_norm < threshold, None)
-
-
-def p2p(
-    threshold: float,
-    zero_percent: float,
-    ref: torch.Tensor,
-    res: torch.Tensor,
-    verbose: int,
-) -> Tuple[bool, bool | None]:
-
-    if verbose >= benchgc.util.COMPARE_VERBOSE:
-        print("p2p check: threshold: %.7f" % threshold)
-    f32_ref = ref.to(torch.float32)
-    f32_res = res.to(torch.float32)
-
-    check = torch.tensor(False)
-
-    check = check.bitwise_or(torch.bitwise_and(f32_ref.isnan(), f32_res.isnan()))
-    check = check.bitwise_or(torch.bitwise_and(f32_ref.isneginf(), f32_res.isneginf()))
-    check = check.bitwise_or(torch.bitwise_and(f32_ref.isposinf(), f32_res.isposinf()))
-
-    # choose diff/rel_diff based on value
-    abs_diff = (f32_ref - f32_res).abs()
-    rel_diff = abs_diff / torch.where(
-        f32_ref.abs() > numpy.finfo(numpy.float32).smallest_subnormal,
-        f32_ref.abs(),
-        1,
-    )
-    # pick a diff for comparison
-    diff = torch.where(f32_ref.abs() > 1e-5, rel_diff, abs_diff)
-
-    check = check.bitwise_or(diff <= threshold)
-
-    if verbose >= benchgc.util.OUTPUT_VERBOSE:
-        iterate_tensor(
-            check,
-            lambda idx: print(
-                "%20s: ref: %12.7f res: %12.7f abs_diff: %12.7f rel_diff: %12.7f"
-                % (
-                    idx,
-                    f32_ref[idx].item(),
-                    f32_res[idx].item(),
-                    abs_diff[idx].item(),
-                    rel_diff[idx].item(),
-                )
-            ),
-        )
-    if check.all():
-        # check mistrusted
-        zero = res.nelement() - res.count_nonzero().item()
-        if res.nelement() < 10:
-            mistrust = False
-        else:
-            mistrust = zero * 100.0 / res.nelement() > zero_percent
-        return (True, mistrust)
-    else:
-        if (
-            verbose < benchgc.util.OUTPUT_VERBOSE
-        ):  # skip verbose print if full output tensor is alrady printed
-            fail = torch.argwhere(torch.where(check, 0, 1))
-            if verbose < benchgc.util.ERROR_OUTPUT_VERBOSE:
-                # only print top 10 failed data points if verbose level does not satisfied
-                fail = fail[:10]
-            for idx in fail:
-                index: Tuple[int, ...] = tuple(idx.tolist())
-                print(
-                    "%20s: ref: %12.7f res: %12.7f abs_diff: %12.7f rel_diff: %12.7f"
-                    % (
-                        index,
-                        f32_ref[index].item(),
-                        f32_res[index].item(),
-                        abs_diff[index].item(),
-                        rel_diff[index].item(),
-                    )
-                )
-        return (False, None)
