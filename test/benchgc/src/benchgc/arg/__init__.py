@@ -18,6 +18,7 @@ import argparse
 import torch
 
 import benchgc.util
+import benchgc.arg.compare
 from benchgc.arg.arg import Arg
 
 from typing import List, Tuple
@@ -139,10 +140,10 @@ def compare_tensor(
     if arg.cmp_type == "P":  # p2p check
         threshold = float(arg.cmp_param[0])
         zero_percent = float(arg.cmp_param[1])
-        return p2p(threshold, zero_percent, ref, res, verbose)
+        return benchgc.arg.compare.p2p(threshold, zero_percent, ref, res, verbose)
     if arg.cmp_type == "N":  # norm check
         threshold = float(arg.cmp_param[0])
-        return norm(threshold, ref, res, verbose)
+        return benchgc.arg.compare.norm(threshold, ref, res, verbose)
     elif arg.cmp_type == "D" and len(arg.cmp_param) > 0:  # driver check
         driver: str = arg.cmp_param[0]
         driver_module = onednn_module[driver]
