@@ -18,6 +18,7 @@ from typing import List
 import benchgc.util
 import benchgc.mlir.arg
 
+
 class Arg(benchgc.mlir.arg.MLIRArg):
     fill_type: str
     fill_param: List[str]
@@ -58,5 +59,3 @@ class Arg(benchgc.mlir.arg.MLIRArg):
         splited: List[str] = cmp.split(":")
         self.cmp_type = splited[0]
         self.cmp_param = splited[1:]
-
-

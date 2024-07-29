@@ -26,21 +26,27 @@ from typing import List, Dict, Tuple, Set
 
 op: Set[str] = set(["linalg.matmul_transpose_b"])
 
-def default_fill(flags: argparse.Namespace, 
-                 arg: Arg,
-                 arglist: List[Arg],):
+
+def default_fill(
+    flags: argparse.Namespace,
+    arg: Arg,
+    arglist: List[Arg],
+):
     if arg.index > 1:
-        raise Exception("matmul fill: dst filling is not allowed") 
+        raise Exception("matmul fill: dst filling is not allowed")
     arg.fill_type = "D"
-    arg.fill_param = ["matmul", 
-                      "src" if arg.index == 0 else "wei",
-                      arglist[0].dtype,
-                      arglist[1].dtype,
-                      arglist[2].dtype]
+    arg.fill_param = [
+        "matmul",
+        "src" if arg.index == 0 else "wei",
+        arglist[0].dtype,
+        arglist[1].dtype,
+        arglist[2].dtype,
+    ]
 
     # find the amplifier K of the matmul
     if flags.driver == "linalg" and flags.case == "matmul_transpose_b":
         arg.fill_param.append(str(arg.shape[-1]))
+
 
 def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tensor:
     name, src_dt, wei_dt, dst_dt, amp = params
@@ -88,11 +94,15 @@ def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tenso
 
     return value.to(dtype)
 
-def default_compare(flags: argparse.Namespace,
-                    arg: Arg,
-                    arglist: List[Arg],):
+
+def default_compare(
+    flags: argparse.Namespace,
+    arg: Arg,
+    arglist: List[Arg],
+):
     arg.cmp_type = "D"
     arg.cmp_param = ["matmul"]
+
 
 def compare(
     ref: torch.Tensor, res: torch.Tensor, verbose: int

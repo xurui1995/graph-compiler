@@ -73,6 +73,7 @@ def get_md(tensor: torch.Tensor):
     md.offset = ctypes.c_longlong(0)
     return md
 
+
 class MLIRArg:
     dtype: str
     shape: List[int]
@@ -110,14 +111,20 @@ class MLIRArg:
         if self.shape == []:
             return str_to_mlir_dtype(ctx, self.dtype)
         else:
-            return gc_mlir.ir.RankedTensorType.get(self.shape, str_to_mlir_dtype(ctx, self.dtype))
+            return gc_mlir.ir.RankedTensorType.get(
+                self.shape, str_to_mlir_dtype(ctx, self.dtype)
+            )
 
     def get_ranked_tensor_type(
         self, ctx: gc_mlir.ir.Context
     ) -> gc_mlir.ir.RankedTensorType:
-        return gc_mlir.ir.RankedTensorType.get(self.shape, str_to_mlir_dtype(ctx, self.dtype))
+        return gc_mlir.ir.RankedTensorType.get(
+            self.shape, str_to_mlir_dtype(ctx, self.dtype)
+        )
 
     def get_empty_op(self, ctx: gc_mlir.ir.Context) -> gc_mlir.dialects.tensor.EmptyOp:
         if self.shape == []:
             raise Exception("shape is unknown")
-        return gc_mlir.dialects.tensor.EmptyOp(self.shape, str_to_mlir_dtype(ctx, self.dtype))
+        return gc_mlir.dialects.tensor.EmptyOp(
+            self.shape, str_to_mlir_dtype(ctx, self.dtype)
+        )

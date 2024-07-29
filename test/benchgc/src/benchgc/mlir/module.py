@@ -22,6 +22,7 @@ import gc_mlir.dialects.tensor
 
 from gc_mlir.dialects import func
 
+
 def init_i1o1_module(
     argin: MLIRArg,
     argout: MLIRArg,
@@ -74,4 +75,3 @@ def init_i2o1_module(
                 arg0, arg1 = f.entry_block.arguments
                 func.ReturnOp([op_func(ctx, arg0, arg1)])
         return module
-

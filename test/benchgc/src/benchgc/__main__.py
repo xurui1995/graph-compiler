@@ -21,7 +21,12 @@ import argparse
 import torch
 
 from benchgc.arg.arg import Arg
-from benchgc.arg import fill_tensor, compare_tensor, set_default_compare, set_default_fill
+from benchgc.arg import (
+    fill_tensor,
+    compare_tensor,
+    set_default_compare,
+    set_default_fill,
+)
 from typing import Dict, List
 import runner
 import benchgc.util

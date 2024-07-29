@@ -37,6 +37,7 @@ def iterate_tensor(tensor: torch.Tensor, fn: Callable[[Tuple[int, ...]], None]):
 
     dfs(0)
 
+
 def norm(
     threshold: float, ref: torch.Tensor, res: torch.Tensor, verbose: int
 ) -> Tuple[bool, bool | None]:

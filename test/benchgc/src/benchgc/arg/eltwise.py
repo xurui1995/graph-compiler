@@ -28,9 +28,12 @@ from typing import List, Tuple, Set
 
 op: Set[str] = set(["linalg.abs", "linalg.negf", "linalg.exp"])
 
-def default_fill(flags: argparse.Namespace, 
-                 arg: Arg,
-                 arglist: List[Arg],):
+
+def default_fill(
+    flags: argparse.Namespace,
+    arg: Arg,
+    arglist: List[Arg],
+):
     if arg.index > 0:
         raise Exception("eltwise fill: dst filling is not allowed")
     arg.fill_param = ["eltwise", flags.case]
@@ -39,6 +42,7 @@ def default_fill(flags: argparse.Namespace,
     elif flags.driver == "linalg" and flags.case in ["negf"]:
         arg.fill_param.extend(["-1", "0"])
     arg.fill_type = "D"
+
 
 def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tensor:
     alg, alpha, beta = params
@@ -112,11 +116,14 @@ def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tenso
     return value.reshape(shape)
 
 
-def default_compare(flags: argparse.Namespace,
-                    arg: Arg,
-                    arglist: List[Arg],):
+def default_compare(
+    flags: argparse.Namespace,
+    arg: Arg,
+    arglist: List[Arg],
+):
     arg.cmp_type = "D"
     arg.cmp_param = ["eltwise"]
+
 
 def compare(
     ref: torch.Tensor, res: torch.Tensor, verbose: int

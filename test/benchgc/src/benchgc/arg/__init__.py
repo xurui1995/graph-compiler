@@ -33,28 +33,32 @@ onednn_module = {
     "matmul": matmul,
 }
 
-def set_default_fill(flags: argparse.Namespace, arg: Arg, arglist: List[Arg], is_return: bool):
+
+def set_default_fill(
+    flags: argparse.Namespace, arg: Arg, arglist: List[Arg], is_return: bool
+):
     if arg.fill_type != "-":
         return
-    
+
     if is_return:
         arg.fill_type = "Z"
         arg.fill_param = []
         return
 
-    for (_, module) in onednn_module.items():
+    for _, module in onednn_module.items():
         if flags.driver + "." + flags.case in module.op:
             module.default_fill(flags, arg, arglist)
             return
-    # use N(0, 1) as default 
+    # use N(0, 1) as default
     arg.fill_type = "N"
     arg.fill_param = ["0", "1"]
+
 
 def set_default_compare(flags: argparse.Namespace, arg: Arg, arglist: List[Arg]):
     if arg.cmp_type != "-":
         return
 
-    for (_, module) in onednn_module.items():
+    for _, module in onednn_module.items():
         if flags.driver + "." + flags.case in module.op:
             module.default_compare(flags, arg, arglist)
             return
@@ -65,6 +69,7 @@ def set_default_compare(flags: argparse.Namespace, arg: Arg, arglist: List[Arg])
         arg.cmp_param = [str(torch.finfo(dtype).eps), "0"]
     else:
         arg.cmp_param = ["0", "0"]
+
 
 def fill_tensor(flags: argparse.Namespace, arg: Arg, idx: int) -> torch.Tensor:
     if arg.dtype == "" or arg.fill_type == "":

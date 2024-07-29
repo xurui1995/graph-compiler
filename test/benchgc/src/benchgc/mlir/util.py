@@ -21,6 +21,7 @@ import torch
 from typing import List
 
 from gc_mlir.dialects import func
+
 # only python 3.11 support
 # from typing import Self
 
@@ -71,6 +72,7 @@ def dtype_to_ctype(dtype: torch.dtype):
     else:
         raise ValueError(f"Unsupported torch dtype: {dtype}")
 
+
 def str_to_mlir_dtype(ctx: gc_mlir.ir.Context, dtype: str) -> gc_mlir.ir.Type:
     if dtype == "f32":
         return gc_mlir.ir.F32Type.get(ctx)
@@ -94,4 +96,3 @@ def str_to_mlir_dtype(ctx: gc_mlir.ir.Context, dtype: str) -> gc_mlir.ir.Type:
         return gc_mlir.ir.IntegerType.get_signed(32, ctx)
     else:
         raise Exception("data type not support: %s" % dtype)
-
