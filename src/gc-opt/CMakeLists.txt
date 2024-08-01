@@ -33,7 +33,8 @@ set(gc_opt_libs
         ${dialect_libs}
         ${conversion_libs} 
         ${MLIR_LINK_COMPONENTS}
-        GCPasses)
+        GCPasses
+        GCAnalysis)
 
 if(GC_USE_GPU)
   add_definitions(-DGC_USE_GPU=1)

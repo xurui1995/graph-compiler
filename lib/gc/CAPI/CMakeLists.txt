@@ -2,6 +2,7 @@ set(GC_ALL_LIBS
   MLIROneDNNGraph
   MLIRCPURuntimeDialect
   GCPasses
+  GCAnalysis
   MLIRCPURuntimeTransforms)
 
 if(GC_USE_GPU)
