@@ -24,7 +24,23 @@ from typing import List, Dict, Tuple, Set
 # params format: [src | wei, src dt, wei dt, dst dt, amp]
 # use other filling type for bias
 
-op: Set[str] = set(["linalg.matmul_transpose_b"])
+op: Set[str] = set(
+    [
+        "linalg.batch_matmul",
+        "linalg.batch_matmul_transpose_a",
+        "linalg.batch_matmul_transpose_b",
+        "linalg.batch_matvec",
+        "linalg.batch_mmt4d",
+        "linalg.batch_vecmat",
+        "linalg.batch_reduce_matmul",
+        "linalg.matmul",
+        "linalg.matmul_transpose_a",
+        "linalg.matmul_transpose_b",
+        "linalg.matvec",
+        "linalg.mmt4d",
+        "linalg.vecmat",
+    ]
+)
 
 
 def default_fill(
@@ -44,8 +60,42 @@ def default_fill(
     ]
 
     # find the amplifier K of the matmul
-    if flags.driver == "linalg" and flags.case == "matmul_transpose_b":
-        arg.fill_param.append(str(arg.shape[-1]))
+    if flags.driver == "linalg":
+        if (
+            flags.case == "matmul_transpose_b"
+            or flags.case == "batch_matmul"
+            and arg.index == 0
+            or flags.case == "batch_matmul_transpose_b"
+            or flags.case == "batch_matvec"
+            or flags.case == "batch_vecmat"
+            and arg.index == 0
+            or flags.case == "matmul"
+            and arg.index == 0
+            or flags.case == "matvec"
+            or flags.case == "vecmat"
+            and arg.index == 0
+        ):
+            arg.fill_param.append(str(arg.shape[-1]))
+        elif (
+            flags.case == "batch_matmul"
+            and arg.index == 1
+            or flags.case == "batch_matmul_transpose_a"
+            or flags.case == "batch_vecmat"
+            and arg.index == 1
+            or flags.case == "matmul"
+            and arg.index == 1
+            or flags.case == "matmul_transpose_a"
+            or flags.case == "vecmat"
+            and arg.index == 1
+        ):
+            arg.fill_param.append(str(arg.shape[-2]))
+        elif flags.case == "batch_mmt4d" or flags.case == "mmt4d":
+            arg.fill_param.append(str(arg.shape[-1] * arg.shape[-3]))
+        # reduce the matmul will amplified by B * K
+        elif flags.case == "batch_reduce_matmul" and arg.index == 0:
+            arg.fill_param.append(str(arg.shape[-1] * arg.shape[0]))
+        elif flags.case == "batch_reduce_matmul" and arg.index == 1:
+            arg.fill_param.append(str(arg.shape[-2] * arg.shape[0]))
 
 
 def fill(shape: List[int], dtype: torch.dtype, params: List[str]) -> torch.Tensor:

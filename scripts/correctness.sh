@@ -11,7 +11,18 @@ python3 -m benchgc --verbose 0 --driver linalg --case copy --md 0:1024x1024xf32 
 python3 -m benchgc --verbose 0 --driver linalg --case broadcast --md 0:1024xf32 --md 1:2x32x1024xf32 --dimensions=0 --dimensions=1 || FAIL=1
 
 # matmul
+python3 -m benchgc --verbose 0 --driver linalg --case batch_matmul --md 0:16x512x64xf32 --md 1:16x64x32xf32 --md 2:16x512x32xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case batch_matmul_transpose_a --md 0:16x512x64xf32 --md 1:16x512x32xf32 --md 2:16x64x32xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case batch_matmul_transpose_b --md 0:16x512x64xf32 --md 1:16x128x64xf32 --md 2:16x512x128xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case batch_matvec --md 0:16x512x64xf32 --md 1:16x64xf32 --md 2:16x512xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case batch_mmt4d --md 0:4x4x8x4x2xf32 --md 1:4x8x8x4x2xf32 --md 2:4x4x8x4x4xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case batch_reduce_matmul --md 0:16x512x64xf32 --md 1:16x64x32xf32 --md 2:512x32xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case batch_vecmat --md 0:16x64xf32 --md 1:16x64x512xf32 --md 2:16x512xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case matmul --md 0:1024x512xf32 --md 1:512x512xf32 --md 2:1024x512xf32 --cast cast_signed || FAIL=1
 python3 -m benchgc --verbose 0 --driver linalg --case matmul_transpose_b --md 0:1024x512xf32 --md 1:1024x512xf32 --md 2:1024x1024xf32 --cast cast_signed || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case matvec --md 0:512x64xf32 --md 1:64xf32 --md 2:512xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case mmt4d --md 0:4x8x4x2xf32 --md 1:8x8x4x2xf32 --md 2:4x8x4x4xf32 || FAIL=1
+python3 -m benchgc --verbose 0 --driver linalg --case vecmat --md 0:512xf32 --md 1:512x64xf32 --md 2:64xf32 || FAIL=1
 
 # binary
 python3 -m benchgc --verbose 0 --driver linalg --case add --md 0:1x32x4096xf32 --md 1:1x32x4096xf32 --md 2:1x32x4096xf32 || FAIL=1

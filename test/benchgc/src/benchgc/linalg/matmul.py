@@ -28,12 +28,205 @@ from benchgc.arg import Arg
 from typing import Dict, List
 
 
-def ref_matmul_transpose_b(
+def ref_batch_matmul(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    var[cache.res[0]] = torch.matmul(var[cache.opr[0]], var[cache.opr[1]])
+
+
+def mlir_batch_matmul(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.batch_matmul(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_batch_matmul_transpose_a(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    var[cache.res[0]] = torch.bmm(
+        var[cache.opr[0]].transpose(-1, -2), var[cache.opr[1]]
+    )
+
+
+def mlir_batch_matmul_transpose_a(
+    flags: argparse.Namespace, args: List[Arg]
+) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.batch_matmul_transpose_a(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_batch_matmul_transpose_b(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    var[cache.res[0]] = torch.bmm(
+        var[cache.opr[0]], var[cache.opr[1]].transpose(-1, -2)
+    )
+
+
+def mlir_batch_matmul_transpose_b(
+    flags: argparse.Namespace, args: List[Arg]
+) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.batch_matmul_transpose_b(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_batch_matvec(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    # pytorch does not support bmv
+    var[cache.res[0]] = torch.matmul(
+        var[cache.opr[0]], var[cache.opr[1]].unsqueeze(-1)
+    ).squeeze(-1)
+
+
+def mlir_batch_matvec(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.batch_matvec(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_batch_mmt4d(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    # [B, m, k, m0, k0] -> [B, m, m0, k, k0]
+    _src = var[cache.opr[0]].permute([0, 1, 3, 2, 4]).contiguous()
+    # [B, n, k, n0, k0] -> [B, k, k0, n, n0]
+    _wei = var[cache.opr[1]].permute([0, 2, 4, 1, 3]).contiguous()
+
+    # [B, m, m0, k, k0] -> [B, M, K]
+    src = _src.reshape(
+        [_src.shape[0], _src.shape[1] * _src.shape[2], _src.shape[3] * _src.shape[4]]
+    )
+    # [B, k, k0, n, n0] -> [B, K, N]
+    wei = _wei.reshape(
+        [_wei.shape[0], _wei.shape[1] * _wei.shape[2], _wei.shape[3] * _wei.shape[4]]
+    )
+
+    dst = torch.bmm(src, wei)
+    # [B, M, N] -> [B, m, m0, n, n0]
+    dst = dst.reshape(
+        [dst.shape[0], _src.shape[1], _src.shape[2], _wei.shape[-2], _wei.shape[-1]]
+    )
+
+    # [B, m, m0, n, n0] -> [B, m, n, m0, n0]
+    var[cache.res[0]] = dst.transpose(2, 3).contiguous()
+
+
+def mlir_batch_mmt4d(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.batch_mmt4d(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_batch_reduce_matmul(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    var[cache.res[0]] = torch.addbmm(
+        input=torch.zeros(tuple()),
+        batch1=var[cache.opr[0]],
+        batch2=var[cache.opr[1]],
+        beta=0,
+        alpha=1,
+    )
+
+
+def mlir_batch_reduce_matmul(
+    flags: argparse.Namespace, args: List[Arg]
+) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.batch_reduce_matmul(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_batch_vecmat(
     cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
 ):
     var[cache.res[0]] = torch.matmul(
-        var[cache.opr[0]], var[cache.opr[1]].transpose(-1, -2)
+        var[cache.opr[0]].unsqueeze(-2), var[cache.opr[1]]
+    ).squeeze(-2)
+
+
+def mlir_batch_vecmat(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.batch_vecmat(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
     )
+
+
+def ref_matmul(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]):
+    var[cache.res[0]] = torch.mm(var[cache.opr[0]], var[cache.opr[1]])
+
+
+def mlir_matmul(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.matmul(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)], cast=TypeFnType(flags.cast)
+        ),
+    )
+
+
+def ref_matmul_transpose_a(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    var[cache.res[0]] = torch.mm(var[cache.opr[0]].transpose(-1, -2), var[cache.opr[1]])
+
+
+def mlir_matmul_transpose_a(
+    flags: argparse.Namespace, args: List[Arg]
+) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.matmul_transpose_a(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)], cast=TypeFnType(flags.cast)
+        ),
+    )
+
+
+def ref_matmul_transpose_b(
+    cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]
+):
+    var[cache.res[0]] = torch.mm(var[cache.opr[0]], var[cache.opr[1]].transpose(-1, -2))
 
 
 def mlir_matmul_transpose_b(
@@ -45,5 +238,67 @@ def mlir_matmul_transpose_b(
         args[2],
         lambda ctx, arg0, arg1: linalg.matmul_transpose_b(
             arg0, arg1, outs=[args[2].get_empty_op(ctx)], cast=TypeFnType(flags.cast)
+        ),
+    )
+
+
+def ref_matvec(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]):
+    var[cache.res[0]] = torch.mv(var[cache.opr[0]], var[cache.opr[1]])
+
+
+def mlir_matvec(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.matvec(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_mmt4d(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]):
+    # [m, k, m0, k0] -> [m, m0, k, k0]
+    _src = var[cache.opr[0]].permute([0, 2, 1, 3]).contiguous()
+    # [n, k, n0, k0] -> [k, k0, n, n0]
+    _wei = var[cache.opr[1]].permute([1, 3, 0, 2]).contiguous()
+
+    # [m, m0, k, k0] -> [M, K]
+    src = _src.reshape([_src.shape[0] * _src.shape[1], _src.shape[2] * _src.shape[3]])
+    # [k, k0, n, n0] -> [K, N]
+    wei = _wei.reshape([_wei.shape[0] * _wei.shape[1], _wei.shape[2] * _wei.shape[3]])
+
+    dst = torch.mm(src, wei)
+    # [M, N] -> [m, m0, n, n0]
+    dst = dst.reshape([_src.shape[0], _src.shape[1], _wei.shape[-2], _wei.shape[-1]])
+
+    # [m, m0, n, n0] -> [m, n, m0, n0]
+    var[cache.res[0]] = dst.transpose(1, 2).contiguous()
+
+
+def mlir_mmt4d(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.mmt4d(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
+def ref_vecmat(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]):
+    var[cache.res[0]] = torch.matmul(
+        var[cache.opr[0]].unsqueeze(-2), var[cache.opr[1]]
+    ).squeeze(-2)
+
+
+def mlir_vecmat(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.vecmat(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
         ),
     )
