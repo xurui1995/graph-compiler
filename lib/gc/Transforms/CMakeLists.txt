@@ -12,6 +12,9 @@ get_property(mlir_conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 add_mlir_library(GCPasses
   OneDNNGraphToLinalg.cpp
   Pipeline.cpp
+  PropagateLayout.cpp
+  PostProcessPackUnpack.cpp
+  LowerPackUnpack.cpp
   DeepTileContractionNamedOp.cpp
   TilingUtil.cpp
   SinkOpIntoInnerLoop.cpp
