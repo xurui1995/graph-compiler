@@ -189,6 +189,21 @@ def mlir_batch_vecmat(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.
     )
 
 
+def ref_dot(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]):
+    var[cache.res[0]] = torch.dot(var[cache.opr[0]], var[cache.opr[1]])
+
+
+def mlir_dot(flags: argparse.Namespace, args: List[Arg]) -> gc_mlir.ir.Module:
+    return init_i2o1_module(
+        args[0],
+        args[1],
+        args[2],
+        lambda ctx, arg0, arg1: linalg.dot(
+            arg0, arg1, outs=[args[2].get_empty_op(ctx)]
+        ),
+    )
+
+
 def ref_matmul(cache: MLIRCache, op: gc_mlir.ir.OpView, var: Dict[str, torch.Tensor]):
     var[cache.res[0]] = torch.mm(var[cache.opr[0]], var[cache.opr[1]])
 

@@ -33,6 +33,7 @@ op: Set[str] = set(
         "linalg.batch_mmt4d",
         "linalg.batch_vecmat",
         "linalg.batch_reduce_matmul",
+        "linalg.dot",
         "linalg.matmul",
         "linalg.matmul_transpose_a",
         "linalg.matmul_transpose_b",
@@ -74,6 +75,7 @@ def default_fill(
             or flags.case == "matvec"
             or flags.case == "vecmat"
             and arg.index == 0
+            or flags.case == "dot"
         ):
             arg.fill_param.append(str(arg.shape[-1]))
         elif (

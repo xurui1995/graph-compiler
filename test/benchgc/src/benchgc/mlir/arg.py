@@ -19,6 +19,7 @@ import ctypes
 
 from typing import List, Any
 from benchgc.mlir.util import dtype_to_ctype, str_to_mlir_dtype
+import gc_mlir.dialects.arith
 import gc_mlir.dialects.tensor
 import gc_mlir.ir
 
@@ -108,7 +109,7 @@ class MLIRArg:
             self.scalar = False
 
     def get_mlir_type(self, ctx: gc_mlir.ir.Context) -> gc_mlir.ir.Type:
-        if self.shape == []:
+        if self.scalar:
             return str_to_mlir_dtype(ctx, self.dtype)
         else:
             return gc_mlir.ir.RankedTensorType.get(
@@ -123,8 +124,8 @@ class MLIRArg:
         )
 
     def get_empty_op(self, ctx: gc_mlir.ir.Context) -> gc_mlir.dialects.tensor.EmptyOp:
-        if self.shape == []:
-            raise Exception("shape is unknown")
+        if self.scalar:
+            raise Exception("cannot create empty op for scalar")
         return gc_mlir.dialects.tensor.EmptyOp(
             self.shape, str_to_mlir_dtype(ctx, self.dtype)
         )
